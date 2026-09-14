@@ -4,14 +4,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from pi_vibevoice_transcribe import (
-    choose_mix,
-    convert,
-    localize_events,
-    render_draft,
-    select_media,
-    timestamp,
-)
+from vibevoice_transcribe import choose_mix, convert, render_draft, select_media, timestamp
 
 
 class CoreTests(unittest.TestCase):
@@ -20,10 +13,6 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(choose_mix(-75.7, -21.2), "right")
         self.assertEqual(choose_mix(-30, -38), "stereo")
         self.assertEqual(timestamp(3661.9), "01:01:01")
-        self.assertEqual(
-            localize_events("[Cough][Unintelligible Speech]"),
-            "[기침][알아들을 수 없는 말]",
-        )
 
     def test_render_draft(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -31,25 +20,25 @@ class CoreTests(unittest.TestCase):
             raw = root / "raw.json"
             draft = root / "draft.txt"
             raw.write_text(json.dumps({"segments": [
-                {"start": 1.9, "speaker_id": 0, "text": "안녕하세요."},
+                {"start": 1.9, "speaker_id": 0, "text": "Hello."},
                 {"start": 3, "text": "[Silence]"},
             ]}))
             render_draft(raw, draft)
             self.assertEqual(
                 draft.read_text(),
-                "[00:00:01] [화자 1] 안녕하세요.\n[00:00:03] [비언어음] [침묵]\n",
+                "[00:00:01] [Speaker 1] Hello.\n[00:00:03] [Event] [Silence]\n",
             )
 
     def test_top_level_selection_and_duplicate_stems(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            (root / "C0001.MP4").touch()
+            (root / "A001.mp4").touch()
             (root / "nested").mkdir()
-            (root / "nested/C0002.MP4").touch()
-            self.assertEqual(select_media(root, ["C0*.MP4"]), [root / "C0001.MP4"])
-            (root / "C0001.mov").touch()
+            (root / "nested/A002.mp4").touch()
+            self.assertEqual(select_media(root, ["*.mp4"]), [root / "A001.mp4"])
+            (root / "A001.mov").touch()
             with self.assertRaisesRegex(ValueError, "duplicate stems"):
-                select_media(root, ["C0*.MP4", "C0*.mov"])
+                select_media(root, ["*.mp4", "*.mov"])
 
     def test_channel_aware_conversion(self):
         with tempfile.TemporaryDirectory() as directory:

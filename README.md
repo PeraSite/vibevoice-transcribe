@@ -1,28 +1,28 @@
-# pi-vibevoice-transcribe
+# vibevoice-transcribe
 
 A reusable [Agent Skill](https://agentskills.io/) for local, speaker-aware
-batch transcription on Apple Silicon with VibeVoice ASR and MLX.
+batch transcription with VibeVoice ASR and MLX on Apple Silicon.
 
 It selects media by explicit top-level globs, detects silent stereo channels,
 creates mono 24 kHz FLAC, loads the model once, and preserves raw and readable
-outputs for human review.
+outputs.
 
 ## Requirements
 
 - macOS on Apple Silicon
 - [uv](https://docs.astral.sh/uv/)
 - FFmpeg (`brew install ffmpeg`)
-- About 10 GB of free disk space for the default model and environment
+- About 10 GB of free disk space for the model and environment
 
 ## Install for compatible agents
 
 Clone the repository and expose it through the shared Agent Skills directory:
 
 ```bash
-git clone https://github.com/PeraSite/pi-vibevoice-transcribe \
-  ~/PythonProjects/pi-vibevoice-transcribe
+git clone https://github.com/PeraSite/vibevoice-transcribe \
+  ~/PythonProjects/vibevoice-transcribe
 mkdir -p ~/.agents/skills
-ln -s ~/PythonProjects/pi-vibevoice-transcribe \
+ln -s ~/PythonProjects/vibevoice-transcribe \
   ~/.agents/skills/vibevoice-transcribe
 ```
 
@@ -33,23 +33,23 @@ that directory instead.
 ## Setup
 
 ```bash
-cd ~/PythonProjects/pi-vibevoice-transcribe
+cd ~/PythonProjects/vibevoice-transcribe
 uv sync --locked
-uv run --locked pi-vibevoice-transcribe --download-model
+uv run --locked vibevoice-transcribe --download-model
 ```
 
-The default is `mlx-community/VibeVoice-ASR-4bit`. Models are not stored in the
-repository. Runtime data defaults to:
+The skill uses the pinned `mlx-community/VibeVoice-ASR-4bit` model. Models are
+not stored in the repository. Runtime data defaults to:
 
 ```text
-~/.cache/pi-vibevoice-transcribe/
+~/.cache/vibevoice-transcribe/
 ```
 
 Use another disk when needed:
 
 ```bash
 VIBEVOICE_HOME=/Volumes/FastSSD/vibevoice-cache \
-  uv run --locked pi-vibevoice-transcribe --download-model
+  uv run --locked vibevoice-transcribe --download-model
 ```
 
 ## Use
@@ -57,35 +57,21 @@ VIBEVOICE_HOME=/Volumes/FastSSD/vibevoice-cache \
 Normally, invoke the skill from your agent:
 
 ```text
-/skill:vibevoice-transcribe "/path/to/videos에서 C0*.MP4를 한국어로 전사해줘"
+/skill:vibevoice-transcribe "Transcribe *.mp4 files in /path/to/media"
 ```
 
-The underlying CLI is also usable directly:
+The CLI is also usable directly:
 
 ```bash
-uv run --locked pi-vibevoice-transcribe \
-  --input "/path/to/videos" \
-  --output "/path/to/transcripts" \
-  --glob "C0*.MP4" \
-  --language ko \
-  --context "한국어 인터뷰입니다. 서비스 이름은 부카(Booka)입니다."
+uv run --locked vibevoice-transcribe \
+  --input "/path/to/media" \
+  --output "/path/to/output" \
+  --glob "*.mp4" \
+  --context "Optional names, vocabulary, or domain information"
 ```
 
 Repeat `--glob` to select multiple patterns. Only files directly inside the
-input directory are selected.
-
-### Model selection
-
-The CLI deliberately does not guess from installed RAM. The tested 4-bit
-model is faster and lighter with nearly identical transcript quality, so it
-is the default.
-
-```bash
---model 4bit                                  # default
---model 8bit                                  # optional larger model
---model mlx-community/another-vibevoice-model # Hugging Face repository
---model /path/to/local/model                   # local model directory
-```
+input directory are selected. `--context` is optional.
 
 ## Output
 
@@ -98,16 +84,19 @@ output/
 └── channel-analysis.json
 ```
 
-Reviewed text belongs in `final/`; substantive corrections should be recorded
-in `correction-log.json`. The skill instructs the agent to preserve raw and
-draft output for auditability.
+Draft lines use this format:
+
+```text
+[00:00:13] [Speaker 1] Transcribed text
+[00:00:18] [Event] [Environmental Sounds]
+```
 
 ## Development
 
 ```bash
 uv sync --locked
 uv run --locked python -m unittest discover -s tests
-uv run --locked pi-vibevoice-transcribe --self-check
+uv run --locked vibevoice-transcribe --self-check
 ```
 
 The test suite does not download the model. Full ASR is intentionally an
@@ -116,8 +105,7 @@ opt-in local smoke test because the model is several gigabytes.
 ## Privacy
 
 Transcription runs locally. Setup contacts Hugging Face to download model and
-tokenizer files. Publishing transcripts is never automatic and requires an
-explicit request to the agent.
+tokenizer files. Uploading or publishing transcripts is never automatic.
 
 ## License
 

@@ -10,35 +10,18 @@ import traceback
 from pathlib import Path
 from shutil import which
 
-DEFAULT_MODEL = "mlx-community/VibeVoice-ASR-4bit"
-MODEL_ALIASES = {
-    "4bit": DEFAULT_MODEL,
-    "8bit": "mlx-community/VibeVoice-ASR-8bit",
-}
-MODEL_REVISIONS = {
-    DEFAULT_MODEL: "a1a15cb6c7b70f76b588af7e12f6fab34d5ab654",
-    MODEL_ALIASES["8bit"]: "725c72e54d6ef875472c27fbc50fab470a960940",
-}
+MODEL_REPO = "mlx-community/VibeVoice-ASR-4bit"
+MODEL_REVISION = "a1a15cb6c7b70f76b588af7e12f6fab34d5ab654"
 QWEN_TOKENIZER = "Qwen/Qwen2.5-7B"
 QWEN_REVISION = "d149729398750b98c0af14eb82c78cfe92750796"
 TOKENIZER_FILES = ("tokenizer_config.json", "tokenizer.json", "vocab.json", "merges.txt")
-EVENTS = {
-    "Environmental Sounds": "환경음",
-    "Unintelligible Speech": "알아들을 수 없는 말",
-    "Human Sounds": "사람 소리",
-    "Silence": "침묵",
-    "Music": "음악",
-    "Cough": "기침",
-    "Laughter": "웃음",
-    "Applause": "박수",
-}
 
 
 def cache_home() -> Path:
     if value := os.environ.get("VIBEVOICE_HOME"):
         return Path(value).expanduser().resolve()
     root = Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache"))
-    return (root / "pi-vibevoice-transcribe").resolve()
+    return (root / "vibevoice-transcribe").resolve()
 
 
 def configure_huggingface(cache: Path) -> None:
@@ -113,29 +96,24 @@ def timestamp(seconds: float) -> str:
     return f"{value // 3600:02d}:{value % 3600 // 60:02d}:{value % 60:02d}"
 
 
-def localize_events(text: str) -> str:
-    return re.sub(r"\[([^]]+)]", lambda match: f"[{EVENTS.get(match.group(1), match.group(1))}]", text)
-
-
 def render_draft(raw_path: Path, draft_path: Path) -> None:
     segments = json.loads(raw_path.read_text())["segments"]
     lines = []
     for segment in segments:
-        text = localize_events(segment["text"].strip())
-        who = f"화자 {int(segment['speaker_id']) + 1}" if "speaker_id" in segment else "비언어음"
-        lines.append(f"[{timestamp(segment['start'])}] [{who}] {text}")
+        speaker = f"Speaker {int(segment['speaker_id']) + 1}" if "speaker_id" in segment else "Event"
+        lines.append(f"[{timestamp(segment['start'])}] [{speaker}] {segment['text'].strip()}")
     draft_path.parent.mkdir(parents=True, exist_ok=True)
     draft_path.write_text("\n".join(lines) + "\n")
 
 
-def model_is_complete(model: Path, repo: str, revision: str | None) -> bool:
+def model_is_complete(model: Path) -> bool:
     try:
         marker = json.loads((model / ".complete.json").read_text())
         index = json.loads((model / "model.safetensors.index.json").read_text())
         weights = {model / name for name in index["weight_map"].values()}
         tokenizer = [model / name for name in TOKENIZER_FILES]
         return (
-            marker == {"repo": repo, "revision": revision}
+            marker == {"repo": MODEL_REPO, "revision": MODEL_REVISION}
             and bool(weights)
             and all(path.is_file() and path.stat().st_size for path in (*weights, *tokenizer))
         )
@@ -143,14 +121,14 @@ def model_is_complete(model: Path, repo: str, revision: str | None) -> bool:
         return False
 
 
-def download_model(repo: str, revision: str | None, cache: Path) -> Path:
+def download_model(cache: Path) -> Path:
     from huggingface_hub import snapshot_download
 
-    model = cache / "models" / repo.replace("/", "--")
-    if model_is_complete(model, repo, revision):
+    model = cache / "models" / MODEL_REPO.replace("/", "--")
+    if model_is_complete(model):
         return model
     model.mkdir(parents=True, exist_ok=True)
-    snapshot_download(repo_id=repo, revision=revision, local_dir=model)
+    snapshot_download(repo_id=MODEL_REPO, revision=MODEL_REVISION, local_dir=model)
     snapshot_download(
         repo_id=QWEN_TOKENIZER,
         revision=QWEN_REVISION,
@@ -158,26 +136,13 @@ def download_model(repo: str, revision: str | None, cache: Path) -> Path:
         allow_patterns=list(TOKENIZER_FILES),
     )
     (model / ".complete.json").write_text(
-        json.dumps({"repo": repo, "revision": revision}, indent=2) + "\n"
+        json.dumps({"repo": MODEL_REPO, "revision": MODEL_REVISION}, indent=2) + "\n"
     )
-    if not model_is_complete(model, repo, revision):
+    if not model_is_complete(model):
         raise RuntimeError(f"Downloaded model is incomplete: {model}")
     for partial in model.rglob("*.incomplete"):
         partial.unlink()
     return model
-
-
-def resolve_model(spec: str, cache: Path) -> Path:
-    candidate = Path(spec).expanduser()
-    if candidate.exists():
-        if not candidate.is_dir():
-            raise ValueError(f"Model path is not a directory: {candidate}")
-        return candidate.resolve()
-    repo = MODEL_ALIASES.get(spec, spec)
-    if "/" not in repo:
-        raise ValueError(f"Unknown model alias or path: {spec}")
-    revision = MODEL_REVISIONS.get(repo)
-    return download_model(repo, revision, cache)
 
 
 def select_media(source: Path, patterns: list[str]) -> list[Path]:
@@ -193,7 +158,6 @@ def self_check() -> None:
     assert choose_mix(-75.7, -21.2) == "right"
     assert choose_mix(-30, -38) == "stereo"
     assert timestamp(3661.9) == "01:01:01"
-    assert localize_events("[Cough][Unintelligible Speech]") == "[기침][알아들을 수 없는 말]"
     print("self-check passed")
 
 
@@ -202,9 +166,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--input", type=Path)
     parser.add_argument("--output", type=Path)
     parser.add_argument("--glob", action="append", dest="patterns")
-    parser.add_argument("--language", default="ko")
-    parser.add_argument("--context", default="")
-    parser.add_argument("--model", default="4bit", help="4bit, 8bit, a Hugging Face repo, or a local path")
+    parser.add_argument("--context", default="", help="Optional vocabulary or domain context")
     parser.add_argument("--download-model", action="store_true")
     parser.add_argument("--force", action="store_true")
     parser.add_argument("--self-check", action="store_true")
@@ -220,7 +182,7 @@ def main(argv: list[str] | None = None) -> None:
     cache = cache_home()
     configure_huggingface(cache)
     if args.download_model:
-        print(resolve_model(args.model, cache))
+        print(download_model(cache))
         return
     if not args.input or not args.output or not args.patterns:
         raise SystemExit("--input, --output, and at least one --glob are required")
@@ -237,7 +199,7 @@ def main(argv: list[str] | None = None) -> None:
     media_files = select_media(source, args.patterns)
     if not media_files:
         raise SystemExit(f"No top-level files matched {args.patterns!r} in {source}")
-    model_path = resolve_model(args.model, cache)
+    model_path = download_model(cache)
     for name in ("audio", "raw", "draft", "logs"):
         output.joinpath(name).mkdir(parents=True, exist_ok=True)
 
@@ -287,7 +249,6 @@ def main(argv: list[str] | None = None) -> None:
                     format="json",
                     verbose=False,
                     max_tokens=8192,
-                    language=args.language,
                     context=args.context,
                 )
                 entries[media.name] = {
@@ -317,8 +278,6 @@ def main(argv: list[str] | None = None) -> None:
             render_draft(raw_path, output / "draft" / f"{media.stem}.txt")
     if failures:
         raise SystemExit(f"{failures} transcription(s) failed; see {log_path}")
-
-
 
 
 if __name__ == "__main__":

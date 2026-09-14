@@ -1,7 +1,7 @@
 [project]
-name = "pi-vibevoice-transcribe"
+name = "vibevoice-transcribe"
 version = "0.1.0"
-description = "A reusable Agent Skill for local, speaker-aware transcription with VibeVoice ASR on Apple Silicon"
+description = "A reusable Agent Skill for local batch transcription with VibeVoice ASR on Apple Silicon"
 readme = "README.md"
 license = "MIT"
 authors = [{ name = "PeraSite" }]
@@ -13,7 +13,7 @@ dependencies = [
 ]
 
 [project.scripts]
-pi-vibevoice-transcribe = "pi_vibevoice_transcribe:main"
+vibevoice-transcribe = "vibevoice_transcribe:main"
 
 [build-system]
 requires = ["uv_build>=0.9.7,<0.10.0"]
